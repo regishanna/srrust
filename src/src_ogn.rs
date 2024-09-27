@@ -1,5 +1,5 @@
 use ureq;
-use std::thread;
+use std::{thread, time};
 
 pub struct SrcOgn {}
 
@@ -18,36 +18,30 @@ impl SrcOgn {
     fn work_thread() {
         let ogn = Self::new();
         loop {
-            let ogn_string = Self::get_ogn_string();
-            println!("Reponse = {}", ogn_string);
-        }
-    }
-
-    fn get_ogn_string() -> String {
-        // tentative de lecture tant que ce n'est pas un succes
-        loop {
-            // on recupere les infos de trafic sur la france
-            let response = match ureq::get("https://live.glidernet.org/lxml.php?a=0\
-                                                           &b=51.3\
-                                                           &c=42.1\
-                                                           &d=8.4\
-                                                           &e=-5.1")
-                                               .call() {
-                Ok(r) => r,
-                _ => {
-                    // TODO temporiser et faire une trace
-                    continue;
-                }
-            };
-
-            // on recupere le body de la reponse sous forme de chaine de caracteres
-            match response.into_string() {
-                Ok(s) => return s,
-                _ => {
-                    // TODO temporiser et faire une trace
-                    continue;
-                }
+            match Self::get_and_send_positions() {
+                Err(e) => log::warn!("{:?}", e),
+                _ => ()
             }
+            thread::sleep(time::Duration::from_secs(5));
         }
     }
+
+    fn get_and_send_positions() -> anyhow::Result<()> {
+        let ogn_string = Self::get_ogn_string()?;
+        println!("{}", ogn_string);
+        Ok(())
+    }
+
+    fn get_ogn_string() -> anyhow::Result<String> {
+        // on recupere les infos de trafic sur la france
+        let ogn_string = ureq::get("https://live.glidernet.org/lxml.php?a=0\
+                                                  &b=51.3\
+                                                  &c=42.1\
+                                                  &d=8.4\
+                                                  &e=-5.1")
+                                      .call()?
+                                      .into_string()?;
+        Ok(ogn_string)
+    }
+
 }
