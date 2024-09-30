@@ -1,10 +1,11 @@
 use src_ogn::SrcOgn;
 use std::{thread, time, io::Write};
 
+mod traffic_infos;
 mod src_ogn;
 
 fn main() {
-    // init et personnalisation du systeme de traces
+    // Init et personnalisation du systeme de traces
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format(|buf, record| {
             let level_color = match record.level() {
@@ -29,10 +30,10 @@ fn main() {
 
     log::info!("Lancement {} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
-    // lancement de la reception des trafic OGN
+    // Lancement de la reception des trafic OGN
     SrcOgn::start_receive();
 
-    // attente infinie
+    // Attente infinie
     loop {
         thread::sleep(time::Duration::from_secs(1));
     }

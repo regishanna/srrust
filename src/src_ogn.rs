@@ -20,7 +20,7 @@ impl SrcOgn {
         loop {
             match Self::get_and_send_positions() {
                 Err(e) => log::warn!("{:?}", e),
-                _ => ()
+                Ok(()) => ()
             }
             thread::sleep(time::Duration::from_secs(5));
         }
@@ -33,7 +33,7 @@ impl SrcOgn {
     }
 
     fn get_ogn_string() -> anyhow::Result<String> {
-        // on recupere les infos de trafic sur la france
+        // On recupere les infos de trafic sur la france
         let ogn_string = ureq::get("https://live.glidernet.org/lxml.php?a=0\
                                                   &b=51.3\
                                                   &c=42.1\
