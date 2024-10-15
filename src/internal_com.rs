@@ -1,4 +1,4 @@
-use crate::traffic_infos::{self, TrafficInfos};
+use crate::traffic_infos::TrafficInfos;
 
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
 
