@@ -2,6 +2,7 @@ use src_ogn::SrcOgn;
 use std::{thread, time, io::Write};
 
 mod traffic_infos;
+mod internal_com;
 mod src_ogn;
 
 fn main() {

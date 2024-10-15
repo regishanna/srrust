@@ -1,8 +1,12 @@
 use crate::traffic_infos::{AddressType, TrafficInfos};
+use crate::internal_com;
+
 use ureq;
 use std::{thread, time, str::FromStr};
 
-pub struct SrcOgn {}
+pub struct SrcOgn {
+    sender: internal_com::Sender,
+}
 
 impl SrcOgn {
     /// Lance la reception des trafics OGN
@@ -14,14 +18,16 @@ impl SrcOgn {
 
 
     fn new() -> SrcOgn {
-        SrcOgn {}
+        SrcOgn {
+            sender: internal_com::Sender::new(),
+        }
     }
 
 
     fn work_thread() {
         let ogn = Self::new();
         loop {
-            match Self::get_and_send_positions() {
+            match ogn.get_and_send_positions() {
                 Err(e) => log::warn!("{:?}", e),
                 Ok(()) => ()
             }
@@ -30,10 +36,9 @@ impl SrcOgn {
     }
 
 
-    fn get_and_send_positions() -> anyhow::Result<()> {
+    fn get_and_send_positions(&self) -> anyhow::Result<()> {
         let ogn_string = Self::get_ogn_string()?;
-        println!("{}", ogn_string);
-        Self::parse_ogn_string(&ogn_string)?;
+        self.parse_ogn_string(&ogn_string)?;
         Ok(())
     }
 
@@ -51,7 +56,7 @@ impl SrcOgn {
     }
 
 
-    fn parse_ogn_string(ogn_string: &str) -> anyhow::Result<()> {
+    fn parse_ogn_string(&self, ogn_string: &str) -> anyhow::Result<()> {
         let traffic_beginning_pattern = "<m a=\"";
         let traffic_ending_pattern = "\"";
 
@@ -72,9 +77,11 @@ impl SrcOgn {
                     current_index = traffic_string_end;
 
                     // Analyse de la chaine de trafic
-                    println!("{}", &ogn_string[traffic_string_start..traffic_string_end]);
                     let traffic_infos = Self::parse_traffic(&ogn_string[traffic_string_start..traffic_string_end])?;
                     println!("{:?}", traffic_infos);
+
+                    // Envoi de l'info de trafic aux clients
+                    self.sender.send(&traffic_infos);
                 }
             }
         }

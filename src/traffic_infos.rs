@@ -1,12 +1,14 @@
+use serde::{Serialize, Deserialize};
+
 /// Type d'adresse telle que definie par GDL90, champ "Address Type"
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AddressType {
     AdsbIcao,
     Ogn
 }
 
 /// Informations concernant un trafic
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TrafficInfos {
     pub addr_type: AddressType,
     pub address: u32,                   // sur 24 bits
