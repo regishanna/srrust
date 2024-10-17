@@ -45,13 +45,14 @@ impl SrcOgn {
 
     fn get_ogn_string() -> anyhow::Result<String> {
         // On recupere les infos de trafic sur la france
-        let ogn_string = ureq::get("https://live.glidernet.org/lxml.php?a=0\
-                                                  &b=51.3\
-                                                  &c=42.1\
-                                                  &d=8.4\
-                                                  &e=-5.1")
-                                      .call()?
-                                      .into_string()?;
+        let ogn_string = ureq::get("https://live.glidernet.org/lxml.php?\
+            a=0\
+            &b=51.3\
+            &c=42.1\
+            &d=8.4\
+            &e=-5.1")
+            .call()?
+            .into_string()?;
         Ok(ogn_string)
     }
 
@@ -70,15 +71,14 @@ impl SrcOgn {
                 Some(v) => {
                     // On a trouve le pattern de debut, on cherche celui de fin
                     let traffic_string_start = current_index + v + traffic_beginning_pattern.len();
-                    let traffic_string_end = traffic_string_start + 
-                                                        ogn_string[traffic_string_start..]
-                                                        .find(traffic_ending_pattern)
-                                                        .ok_or(anyhow::anyhow!("Pattern de fin non trouve"))?;
+                    let traffic_string_end = traffic_string_start + ogn_string[traffic_string_start..]
+                        .find(traffic_ending_pattern)
+                        .ok_or(anyhow::anyhow!("Pattern de fin non trouve"))?;
                     current_index = traffic_string_end;
 
                     // Analyse de la chaine de trafic
                     let traffic_infos = Self::parse_traffic(&ogn_string[traffic_string_start..traffic_string_end])?;
-                    println!("{:?}", traffic_infos);
+                    //println!("{:?}", traffic_infos);
 
                     // Envoi de l'info de trafic aux clients
                     self.sender.send(&traffic_infos);

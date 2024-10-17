@@ -1,8 +1,10 @@
 use src_ogn::SrcOgn;
-use std::{thread, time, io::Write};
+use std::io::Write;
 
 mod traffic_infos;
 mod internal_com;
+mod server;
+mod client;
 mod src_ogn;
 
 fn main() {
@@ -34,8 +36,6 @@ fn main() {
     // Lancement de la reception des trafic OGN
     SrcOgn::start_receive();
 
-    // Attente infinie
-    loop {
-        thread::sleep(time::Duration::from_secs(1));
-    }
+    // Ecoute et traitement des connexions des clients (bloquant)
+    server::listen_connections();
 }

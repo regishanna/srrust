@@ -1,6 +1,7 @@
 use crate::traffic_infos::TrafficInfos;
 
-use std::net::{UdpSocket, SocketAddr, SocketAddrV4, Ipv4Addr};
+use socket2::{Socket, Domain, Type};
+use std::{net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket}, os::fd::AsFd};
 
 
 // Adresse et port multicast a utiliser
@@ -15,8 +16,16 @@ pub struct Receiver {
 
 impl Receiver {
     pub fn new() -> Self {
+        // On utilise la crate socket2 car UdpSocket ne permet pas de positionner l'option SO_REUSEPORT
+        // necessaire pour avoir plusieurs recepteurs a l'ecoute sur le meme port multicast
+        let sock = Socket::new(Domain::IPV4, Type::DGRAM, None).unwrap();
+        sock.set_reuse_port(true).unwrap();
+
         // Bind de la socket sur l'adresse et le port d'ecoute multicast
-        let socket = UdpSocket::bind(SocketAddrV4::new(MULTICAST_ADDR_V4, MULTICAST_PORT)).unwrap();
+        sock.bind(&SocketAddrV4::new(MULTICAST_ADDR_V4, MULTICAST_PORT).into()).unwrap();
+
+        // Maintenant, on peut convertir en UdpSocket
+        let socket: UdpSocket = sock.into();
 
         // On s'abonne a l'adresse multicast locale
         socket.join_multicast_v4(&MULTICAST_ADDR_V4, &Ipv4Addr::LOCALHOST).unwrap();
@@ -38,6 +47,12 @@ impl Receiver {
         Ok(traffic_infos)
     }
 
+}
+
+impl AsFd for Receiver {
+    fn as_fd(&self) -> std::os::unix::prelude::BorrowedFd<'_> {
+        self.socket.as_fd()
+    }
 }
 
 
