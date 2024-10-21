@@ -8,6 +8,13 @@ use std::{net::TcpStream, os::fd::AsFd, sync::Mutex, thread, time::Duration};
 const NB_MAX_CLIENTS: usize = 20;
 
 
+// Position 2D
+struct Position {
+    latitude: f64,
+    longitude: f64,
+}
+
+
 pub struct Client {}
 
 impl Client {
@@ -42,6 +49,9 @@ impl Client {
         // Creation d'un recepteur de datagram sur stream pour recevoir les positions des clients
         let mut dgramostream = dgramostream::RecvDgram::new(16);
 
+        // Derniere position du client
+        let mut client_position = None;
+
         // Renseignement des evenements a surveiller
         let mut fds = [
             PollFd::new(socket.as_fd(), PollFlags::POLLIN),             // socket client
@@ -59,13 +69,18 @@ impl Client {
                         log::warn!("Erreur client : {}", e);
                         break;
                     },
-                    Ok(()) => ()
+                    Ok(v) => {
+                        match v {
+                            None => (),
+                            Some(position) => client_position = Some(position)
+                        }
+                    }
                 }
             }
 
             // Traitement d'un evenement de trafic
             if fds[1].any().unwrap() {
-                match Self::process_traffic_event(&traffic_receiver) {
+                match Self::process_traffic_event(&traffic_receiver, &client_position) {
                     Err(e) => {
                         log::warn!("Erreur evenement de trafic : {}", e);
                         break;
@@ -83,21 +98,40 @@ impl Client {
     }
 
 
-    fn process_client_event(socket: &TcpStream, dgramostream: &mut dgramostream::RecvDgram) -> anyhow::Result<()> {
+    fn process_client_event(socket: &TcpStream, dgramostream: &mut dgramostream::RecvDgram)
+        -> anyhow::Result<Option<Position>> {
         // lecture du datagram de position provenant du client
         match dgramostream.recv(socket)? {
-            None => (),                         // le datagram n'est pas encore reconstitue, rien a faire
+            None => Ok(None),                   // le datagram n'est pas encore reconstitue, rien a faire
             Some(position_dgram) => {    // le datagram est reconstitue, on le parse
-                // TODO parser le datagram de position
-                println!("buffer de position recu : {:?}", position_dgram);
+                Ok(Some(Self::parse_client_position_msg(position_dgram)?))
             }
         }
-
-        Ok(())
     }
 
 
-    fn process_traffic_event(mut traffic_receiver: &Receiver) -> anyhow::Result<()> {
+    fn parse_client_position_msg(msg: &[u8]) -> anyhow::Result<Position> {
+        let mut parser = bytes_parser::BytesParser::from(msg);
+
+        let latitude = parser.parse_i32()? as f64 / 1000000.0;
+        if latitude > 90.0 || latitude < -90.0 {
+            return Err(anyhow::anyhow!("Latitude hors bornes"));
+        }
+
+        let longitude = parser.parse_i32()? as f64 / 1000000.0;
+        if longitude > 180.0 || longitude < -180.0 {
+            return Err(anyhow::anyhow!("Longitude hors bornes"));
+        }
+
+        Ok(Position {
+            latitude,
+            longitude,
+        })
+    }
+
+
+    fn process_traffic_event(mut traffic_receiver: &Receiver, client_position: &Option<Position>)
+        -> anyhow::Result<()> {
         let traffic_infos = traffic_receiver.recv()?;
         Ok(())
     }
