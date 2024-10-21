@@ -2,6 +2,7 @@ use src_ogn::SrcOgn;
 use std::io::Write;
 
 mod traffic_infos;
+mod dgramostream;
 mod internal_com;
 mod server;
 mod client;

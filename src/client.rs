@@ -1,7 +1,7 @@
-use crate::{internal_com::Receiver, traffic_infos};
+use crate::{internal_com::Receiver, traffic_infos, dgramostream};
 
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
-use std::{net::TcpStream, os::fd::AsFd, sync::Mutex, thread, time::Duration, io::Read};
+use std::{net::TcpStream, os::fd::AsFd, sync::Mutex, thread, time::Duration};
 
 
 // Nombre maximum de clients connnectes en meme temps
@@ -39,6 +39,9 @@ impl Client {
         // Creation du recepteur des trafics provenant des sources
         let traffic_receiver = Receiver::new();
 
+        // Creation d'un recepteur de datagram sur stream pour recevoir les positions des clients
+        let mut dgramostream = dgramostream::RecvDgram::new(16);
+
         // Renseignement des evenements a surveiller
         let mut fds = [
             PollFd::new(socket.as_fd(), PollFlags::POLLIN),             // socket client
@@ -51,7 +54,7 @@ impl Client {
 
             // Traitement d'un evenement client
             if fds[0].any().unwrap() {
-                match Self::process_client_event(&socket) {
+                match Self::process_client_event(&socket, &mut dgramostream) {
                     Err(e) => {
                         log::warn!("Erreur client : {}", e);
                         break;
@@ -80,12 +83,16 @@ impl Client {
     }
 
 
-    fn process_client_event(mut socket: &TcpStream) -> anyhow::Result<()> {
-        let mut buffer = [0; 100];
-        let nb = socket.read(&mut buffer)?;
-        if nb == 0 {
-            return Err(anyhow::anyhow!("Connexion fermee par le distant"));
+    fn process_client_event(socket: &TcpStream, dgramostream: &mut dgramostream::RecvDgram) -> anyhow::Result<()> {
+        // lecture du datagram de position provenant du client
+        match dgramostream.recv(socket)? {
+            None => (),                         // le datagram n'est pas encore reconstitue, rien a faire
+            Some(position_dgram) => {    // le datagram est reconstitue, on le parse
+                // TODO parser le datagram de position
+                println!("buffer de position recu : {:?}", position_dgram);
+            }
         }
+
         Ok(())
     }
 
