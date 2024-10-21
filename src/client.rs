@@ -1,4 +1,4 @@
-use crate::{internal_com::Receiver, traffic_infos, dgramostream};
+use crate::{dgramostream, internal_com::Receiver, traffic_infos::{self, TrafficInfos}};
 
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 use std::{net::TcpStream, os::fd::AsFd, sync::Mutex, thread, time::Duration};
@@ -132,8 +132,35 @@ impl Client {
 
     fn process_traffic_event(mut traffic_receiver: &Receiver, client_position: &Option<Position>)
         -> anyhow::Result<()> {
+        // Lecture du trafic depuis la socket multicast
         let traffic_infos = traffic_receiver.recv()?;
+
+        // Envoi de l'info de trafic au client, uniquement s'il est proche
+        if Self::traffic_close_to_client(&traffic_infos, client_position) {
+            
+        }
+
         Ok(())
+    }
+
+
+    fn traffic_close_to_client(traffic_infos: &TrafficInfos, client_position: &Option<Position>) -> bool {
+        let mut traffic_close = false;
+
+        match client_position {
+            None => (),         // La position du client n'est pas connue, on considere que le trafic n'est pas proche
+            Some(position) => {
+                // Le trafic doit etre dans un carre centre sur la position du client pour etre considere proche
+                const MAX_DELTA_LATITUDE: f64 = 1.0;     // En degres
+                const MAX_DELTA_LONGITUDE: f64 = 1.0;    // En degres
+                if ((traffic_infos.latitude - position.latitude).abs() < MAX_DELTA_LATITUDE) &&
+                   ((traffic_infos.longitude - position.longitude).abs() < MAX_DELTA_LONGITUDE) {
+                    traffic_close = true;
+                   }
+            }
+        }
+
+        traffic_close
     }
 
 
