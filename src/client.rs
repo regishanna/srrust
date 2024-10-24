@@ -1,7 +1,7 @@
-use crate::{dgramostream, internal_com::Receiver, traffic_infos::TrafficInfos, gdl90};
+use crate::{dgramostream, gdl90, internal_com::Receiver, traffic_infos::TrafficInfos};
 
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
-use std::{net::TcpStream, os::fd::AsFd, sync::Mutex, thread, time::Duration};
+use std::{net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream}, os::fd::AsFd, sync::Mutex, thread, time::Duration};
 
 
 // Nombre maximum de clients connnectes en meme temps
@@ -9,6 +9,7 @@ const NB_MAX_CLIENTS: usize = 20;
 
 
 // Position 2D
+#[derive(Copy, Clone)]
 struct Position {
     latitude: f64,
     longitude: f64,
@@ -40,6 +41,10 @@ impl Client {
 
 
     fn work_thread(nb_clients: &Mutex<usize>, socket: TcpStream) {
+        // Memorisation de l'adresse du client connecte
+        let client_addr = socket.peer_addr()
+            .unwrap_or(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0));
+
         // Reglage du socket client pour pouvoir detecter au plus vite un probleme de connectivite
         Self::set_client_sock_options(&socket);
 
@@ -72,7 +77,11 @@ impl Client {
                     Ok(v) => {
                         match v {
                             None => (),
-                            Some(position) => client_position = Some(position)
+                            Some(position) => {
+                                client_position = Some(position);
+                                log::info!("Nouvelle position reçue ({}, {}) du client {}",
+                                    position.latitude, position.longitude, client_addr);
+                            }
                         }
                     }
                 }
@@ -94,7 +103,7 @@ impl Client {
         let mut nb_clients = nb_clients.lock().unwrap();
         *nb_clients -= 1;
 
-        log::info!("Le client {} est deconnecte", socket.peer_addr().unwrap());
+        log::info!("Le client {} est deconnecte", client_addr);
     }
 
 
