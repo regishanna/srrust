@@ -1,4 +1,4 @@
-use crate::{dgramostream, internal_com::Receiver, traffic_infos::{self, TrafficInfos}};
+use crate::{dgramostream, internal_com::Receiver, traffic_infos::TrafficInfos, gdl90};
 
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 use std::{net::TcpStream, os::fd::AsFd, sync::Mutex, thread, time::Duration};
@@ -80,7 +80,7 @@ impl Client {
 
             // Traitement d'un evenement de trafic
             if fds[1].any().unwrap() {
-                match Self::process_traffic_event(&traffic_receiver, &client_position) {
+                match Self::process_traffic_event(&traffic_receiver, &client_position, &socket) {
                     Err(e) => {
                         log::warn!("Erreur evenement de trafic : {}", e);
                         break;
@@ -130,14 +130,19 @@ impl Client {
     }
 
 
-    fn process_traffic_event(mut traffic_receiver: &Receiver, client_position: &Option<Position>)
+    fn process_traffic_event(traffic_receiver: &Receiver, client_position: &Option<Position>, socket: &TcpStream)
         -> anyhow::Result<()> {
         // Lecture du trafic depuis la socket multicast
         let traffic_infos = traffic_receiver.recv()?;
 
         // Envoi de l'info de trafic au client, uniquement s'il est proche
         if Self::traffic_close_to_client(&traffic_infos, client_position) {
-            
+            // Preparation du message au format GDL90
+            let mut buffer = [0u8; 100];
+            let len = gdl90::make_traffic_report_message(&traffic_infos, &mut buffer).unwrap();
+
+            // Envoi du message sous forme de datagram
+            dgramostream::send(socket, &buffer[..len])?;
         }
 
         Ok(())

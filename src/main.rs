@@ -3,6 +3,7 @@ use std::io::Write;
 
 mod traffic_infos;
 mod dgramostream;
+mod gdl90;
 mod internal_com;
 mod server;
 mod client;
