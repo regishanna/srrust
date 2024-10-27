@@ -83,12 +83,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
     // Latitude sur 24 bits signes
     {
         let mut latitude = ((infos.latitude * (0x800000 as f64)) / 180.0) as i32;
-        if latitude > 0x3fffff {
-            latitude = 0x3fffff;
-        }
-        if latitude < -0x400000 {
-            latitude = -0x400000;
-        }
+        latitude = latitude.clamp(-0x400000, 0x3fffff);
         let offset = HEAD_LEN + TRAFFIC_REPORT_LATITUDE_OFFSET;
         buf[offset] = ((latitude >> 16) & 0xff) as u8;
         buf[offset + 1] = ((latitude >> 8) & 0xff) as u8;
@@ -98,12 +93,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
     // Longitude sur 24 bits signes
     {
         let mut longitude = ((infos.longitude * (0x800000 as f64)) / 180.0) as i32;
-        if longitude > 0x7fffff {
-            longitude = 0x7fffff;
-        }
-        if longitude < -0x800000 {
-            longitude = -0x800000;
-        }
+        longitude = longitude.clamp(-0x800000, 0x7fffff);
         let offset = HEAD_LEN + TRAFFIC_REPORT_LONGITUDE_OFFSET;
         buf[offset] = ((longitude >> 16) & 0xff) as u8;
         buf[offset + 1] = ((longitude >> 8) & 0xff) as u8;
@@ -118,14 +108,14 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         }
         let offset = HEAD_LEN + TRAFFIC_REPORT_ALTITUDE_OFFSET;
         buf[offset] = ((altitude >> 4) & 0xff) as u8;
-        buf[offset + 1] = (((altitude << 4) & 0xf0) as u8) | buf[offset + 1];
+        buf[offset + 1] |= ((altitude << 4) & 0xf0) as u8;
     }
 
     // Miscellanous indicators
     {
         let misc_indicator = (if infos.track.is_some() { 1u8 } else { 0 }) | 8;
         let offset = HEAD_LEN + TRAFFIC_REPORT_MISC_INDICATOR_OFFSET;
-        buf[offset] = misc_indicator | buf[offset];
+        buf[offset] |= misc_indicator;
     }
 
     // Ground speed sur 12 bits
@@ -146,29 +136,17 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         };
         let offset = HEAD_LEN + TRAFFIC_REPORT_HORIZONTAL_VELOCITY_OFFSET;
         buf[offset] = ((ground_speed >> 4) & 0xff) as u8;
-        buf[offset + 1] = (((ground_speed << 4) & 0xf0) as u8) | buf[offset + 1];
+        buf[offset + 1] |= ((ground_speed << 4) & 0xf0) as u8;
     }
 
     // Vertical speed sur 12 bits
     {
         let vertical_speed = match infos.vertical_speed {
             None => -0x800i32,
-            Some(vs) => {
-                (
-                    if vs >= 32640 {
-                        32640
-                    }
-                    else if vs <= -32640 {
-                        -32640
-                    }
-                    else {
-                        vs
-                    }
-                ) / 64
-            }
+            Some(vs) => vs.clamp(-32640, 32640) / 64
         };
         let offset = HEAD_LEN + TRAFFIC_REPORT_VERTICAL_VELOCITY_OFFSET;
-        buf[offset] = (((vertical_speed >> 8) & 0x0f) as u8) | buf[offset];
+        buf[offset] |= ((vertical_speed >> 8) & 0x0f) as u8;
         buf[offset + 1] = (vertical_speed & 0xff) as u8;
     }
 
@@ -243,7 +221,7 @@ fn compute_crc(buffer: &[u8]) -> u16 {
 fn byte_stuff(message: &[u8], buffer: &mut [u8]) -> anyhow::Result<usize> {
     let mut cur_len = 0usize;
 
-    for (i, &val) in message.into_iter().enumerate() {
+    for (i, &val) in message.iter().enumerate() {
         if (i > 0) && (i < (message.len() - 1)) &&  // Les flags de debut et de fin sont exclus du remplacement
             ((val == FLAG_BYTE) || (val == CONTROL_ESCAPE_CHAR)) {
             // Insertion d'un caractere control escape

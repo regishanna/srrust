@@ -1,7 +1,6 @@
 use crate::traffic_infos::{AddressType, TrafficInfos};
 use crate::internal_com;
 
-use ureq;
 use std::{thread, time, str::FromStr};
 
 pub struct SrcOgn {
@@ -27,9 +26,8 @@ impl SrcOgn {
     fn work_thread() {
         let ogn = Self::new();
         loop {
-            match ogn.get_and_send_positions() {
-                Err(e) => log::warn!("{:?}", e),
-                Ok(()) => ()
+            if let Err(e) = ogn.get_and_send_positions() {
+                log::warn!("{:?}", e);
             }
             thread::sleep(time::Duration::from_secs(5));
         }

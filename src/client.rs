@@ -20,7 +20,7 @@ pub struct Client {}
 
 impl Client {
     /// Tentative de creation d'un nouveau client
-    pub fn new(socket: TcpStream) -> anyhow::Result<()> {
+    pub fn create(socket: TcpStream) -> anyhow::Result<()> {
         static NB_CLIENTS: Mutex<usize> = Mutex::new(0);
 
         // On verifie que le nombre max de clients connectes n'est pas deja atteint
@@ -89,12 +89,9 @@ impl Client {
 
             // Traitement d'un evenement de trafic
             if fds[1].any().unwrap() {
-                match Self::process_traffic_event(&traffic_receiver, &client_position, &socket) {
-                    Err(e) => {
-                        log::warn!("Erreur evenement de trafic : {}", e);
-                        break;
-                    },
-                    Ok(()) => ()
+                if let Err(e) = Self::process_traffic_event(&traffic_receiver, &client_position, &socket) {
+                    log::warn!("Erreur evenement de trafic : {}", e);
+                    break;
                 }
             }
         }
@@ -123,12 +120,12 @@ impl Client {
         let mut parser = bytes_parser::BytesParser::from(msg);
 
         let latitude = parser.parse_i32()? as f64 / 1000000.0;
-        if latitude > 90.0 || latitude < -90.0 {
+        if !(-90.0..=90.0).contains(&latitude) {
             return Err(anyhow::anyhow!("Latitude hors bornes"));
         }
 
         let longitude = parser.parse_i32()? as f64 / 1000000.0;
-        if longitude > 180.0 || longitude < -180.0 {
+        if !(-180.0..=180.0).contains(&longitude) {
             return Err(anyhow::anyhow!("Longitude hors bornes"));
         }
 

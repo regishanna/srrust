@@ -60,7 +60,7 @@ impl RecvDgram {
                 // On n'a pas totalement recu le header, on continue
                 let nb = sock.read(&mut self.header_buf[self.header_buf_cur_len..])?;
                 if nb == 0 {
-                    return Err(anyhow::anyhow!("Connexion fermee par le distant"));
+                    Err(anyhow::anyhow!("Connexion fermee par le distant"))
                 }
                 else {
                     self.header_buf_cur_len += nb;
@@ -74,14 +74,14 @@ impl RecvDgram {
                         self.expected_len = Some(len);
                         self.datagram_cur_len = 0;
                     }
-                    return Ok(None);
+                    Ok(None)
                 }
             },
             Some(expct_len) => {
                 // On a deja recu le header, on recoit le buffer (ou on continue de le recevoir)
                 let nb = sock.read(&mut self.datagram[self.datagram_cur_len..expct_len])?;
                 if nb == 0 {
-                    return Err(anyhow::anyhow!("Connexion fermee par le distant"));
+                    Err(anyhow::anyhow!("Connexion fermee par le distant"))
                 }
                 else {
                     self.datagram_cur_len += nb;
@@ -89,11 +89,11 @@ impl RecvDgram {
                     if self.datagram_cur_len >= expct_len {
                         // Oui, c'est la fin de reception du datagram
                         self.clear();
-                        return Ok(Some(&self.datagram[..expct_len]));
+                        Ok(Some(&self.datagram[..expct_len]))
                     }
                     else {
                         // Non, on devra rappeler la methode
-                        return Ok(None);
+                        Ok(None)
                     }
                 }
             }
