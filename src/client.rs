@@ -28,13 +28,12 @@ impl Client {
         if *nb_clients >= NB_MAX_CLIENTS {
             return Err(anyhow::anyhow!("Nombre max de clients ({}) atteint", NB_MAX_CLIENTS));
         }
-        else {
-            // Creation d'un nouveau client
-            *nb_clients += 1;
-            thread::spawn(|| {
-                Self::work_thread(&NB_CLIENTS, socket);
-            });
-        }
+
+        // Creation d'un nouveau client
+        *nb_clients += 1;
+        thread::spawn(|| {
+            Self::work_thread(&NB_CLIENTS, socket);
+        });
 
         Ok(())
     }
@@ -119,12 +118,12 @@ impl Client {
     fn parse_client_position_msg(msg: &[u8]) -> anyhow::Result<Position> {
         let mut parser = bytes_parser::BytesParser::from(msg);
 
-        let latitude = parser.parse_i32()? as f64 / 1000000.0;
+        let latitude = f64::from(parser.parse_i32()?) / 1_000_000.0;
         if !(-90.0..=90.0).contains(&latitude) {
             return Err(anyhow::anyhow!("Latitude hors bornes"));
         }
 
-        let longitude = parser.parse_i32()? as f64 / 1000000.0;
+        let longitude = f64::from(parser.parse_i32()?) / 1_000_000.0;
         if !(-180.0..=180.0).contains(&longitude) {
             return Err(anyhow::anyhow!("Longitude hors bornes"));
         }

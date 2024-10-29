@@ -1,5 +1,5 @@
 //! Formatage de messages GDL90
-//! Cf https://www.faa.gov/sites/faa.gov/files/air_traffic/technology/adsb/archival/GDL90_Public_ICD_RevA.PDF
+//! Cf <https://www.faa.gov/sites/faa.gov/files/air_traffic/technology/adsb/archival/GDL90_Public_ICD_RevA.PDF>
 //! 
 
 use crate::traffic_infos::{TrafficInfos, AddressType};
@@ -82,8 +82,8 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
 
     // Latitude sur 24 bits signes
     {
-        let mut latitude = ((infos.latitude * (0x800000 as f64)) / 180.0) as i32;
-        latitude = latitude.clamp(-0x400000, 0x3fffff);
+        let mut latitude = ((infos.latitude * f64::from(0x0080_0000)) / 180.0) as i32;
+        latitude = latitude.clamp(-0x0040_0000, 0x003f_ffff);
         let offset = HEAD_LEN + TRAFFIC_REPORT_LATITUDE_OFFSET;
         buf[offset] = ((latitude >> 16) & 0xff) as u8;
         buf[offset + 1] = ((latitude >> 8) & 0xff) as u8;
@@ -92,8 +92,8 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
 
     // Longitude sur 24 bits signes
     {
-        let mut longitude = ((infos.longitude * (0x800000 as f64)) / 180.0) as i32;
-        longitude = longitude.clamp(-0x800000, 0x7fffff);
+        let mut longitude = ((infos.longitude * f64::from(0x0080_0000)) / 180.0) as i32;
+        longitude = longitude.clamp(-0x0080_0000, 0x007f_ffff);
         let offset = HEAD_LEN + TRAFFIC_REPORT_LONGITUDE_OFFSET;
         buf[offset] = ((longitude >> 16) & 0xff) as u8;
         buf[offset + 1] = ((longitude >> 8) & 0xff) as u8;
@@ -211,7 +211,7 @@ fn compute_crc(buffer: &[u8]) -> u16 {
     let mut crc = 0u16;
 
     for val in buffer {
-        crc = CRC_ARRAY[(crc >> 8) as usize] ^ (crc << 8) ^ (*val as u16);
+        crc = CRC_ARRAY[(crc >> 8) as usize] ^ (crc << 8) ^ u16::from(*val);
     }
 
     crc

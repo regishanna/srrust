@@ -9,7 +9,7 @@ use std::{io::{Read, Write}, net::TcpStream};
 /// Envoi un datagram
 pub fn send(mut sock: &TcpStream, buf: &[u8]) -> anyhow::Result<()> {
     // Envoi de l'entete contenant la taille du buffer en big endian
-    let buf_len_bytes = (buf.len() as u16).to_be_bytes();
+    let buf_len_bytes = u16::try_from(buf.len())?.to_be_bytes();
     let nb = sock.write(&buf_len_bytes)?;
     if nb < buf_len_bytes.len() {
         return Err(anyhow::anyhow!("Connexion fermee par le distant"));

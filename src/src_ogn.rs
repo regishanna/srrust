@@ -91,7 +91,7 @@ impl SrcOgn {
         let mut traffic_infos = TrafficInfos::new();
 
         // Decoupage et parse de chaque champ de la chaine de trafic
-        let traffic_fields = traffic_string.split(",");
+        let traffic_fields = traffic_string.split(',');
         for (i, traffic_field) in traffic_fields.enumerate() {
             match i {
                 0 => traffic_infos.latitude = f64::from_str(traffic_field)?,
@@ -103,7 +103,7 @@ impl SrcOgn {
                 9 => traffic_infos.vertical_speed = Some(Self::mps_to_fpm(f64::from_str(traffic_field)?)),
                 13 => {
                     let address = u32::from_str_radix(traffic_field, 16)?;
-                    traffic_infos.address = address & 0xffffff; // On ne conserve que les 24 bits de poids faible
+                    traffic_infos.address = address & 0x00ff_ffff; // On ne conserve que les 24 bits de poids faible
                     traffic_infos.addr_type = AddressType::Ogn;
                 },
                 _ => () // Les autres champs ne sont pas utilises et sont donc consideres valides
@@ -114,17 +114,17 @@ impl SrcOgn {
 
 
     fn meter_to_feet(meter: i32) -> i32 {
-        ((meter as f64) * 3.28084) as i32
+        (f64::from(meter) * 3.28084) as i32
     }
 
 
     fn kmh_to_kt(kmh: i32) -> i32 {
-        ((kmh as f64) * 0.539957) as i32
+        (f64::from(kmh) * 0.539_957) as i32
     }
 
 
     fn mps_to_fpm(mps: f64) -> i32{
-        (mps * 196.850394) as i32
+        (mps * 196.850_394) as i32
     }
 
 }
