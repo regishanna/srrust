@@ -235,7 +235,7 @@ fn byte_stuff(message: &[u8], buffer: &mut [u8]) -> anyhow::Result<usize> {
         }
         else {
             // Pas d'insertion
-            anyhow::ensure!(buffer.len() >= cur_len + 1, "Taille du buffer insuffisante");  // Verification que la taille du buffer est suffisante
+            anyhow::ensure!(buffer.len() > cur_len, "Taille du buffer insuffisante");  // Verification que la taille du buffer est suffisante
             buffer[cur_len] = val;
             cur_len += 1;
         }

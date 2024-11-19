@@ -1,7 +1,9 @@
 use crate::traffic_infos::{AddressType, TrafficInfos};
 use crate::internal_com;
 
+use quick_xml::{events::Event, Reader};
 use std::{thread, time, str::FromStr};
+
 
 pub struct SrcOgn {
     sender: internal_com::Sender,
@@ -56,33 +58,40 @@ impl SrcOgn {
 
 
     fn parse_ogn_string(&self, ogn_string: &str) -> anyhow::Result<()> {
-        let traffic_beginning_pattern = "<m a=\"";
-        let traffic_ending_pattern = "\"";
-
-        let mut current_index = 0;
+        // Parse de la chaine XML avec quick-xml
+        let mut reader = Reader::from_str(ogn_string);
         loop {
-            // Detection du debut d'un trafic par son pattern
-            let traffic_beginning_index = ogn_string[current_index..].find(traffic_beginning_pattern);
+            match reader.read_event()? {
+                Event::Empty(element) => {
+                    // Les trafics OGN sont contenus dans des elements XML vides de nom "m"
+                    if element.local_name().as_ref() == b"m" {
+                        // Parcours des attributs de l'element
+                        for attribute in element.attributes() {
+                            match attribute {
+                                Err(e) => return Err(anyhow::anyhow!("Attribut incorrect : {}", e)),
+                                Ok(attr) => {
+                                    // L'attribut contenant l'info de trafic est "a"
+                                    if attr.key.local_name().as_ref() == b"a" {
+                                        // On recupere sa valeur
+                                        let traffic_string = &(attr.unescape_value()?);
 
-            match traffic_beginning_index {
-                None => break,          // Plus de chaines de trafic, on arrete l'analyse
-                Some(v) => {
-                    // On a trouve le pattern de debut, on cherche celui de fin
-                    let traffic_string_start = current_index + v + traffic_beginning_pattern.len();
-                    let traffic_string_end = traffic_string_start + ogn_string[traffic_string_start..]
-                        .find(traffic_ending_pattern)
-                        .ok_or(anyhow::anyhow!("Pattern de fin non trouve"))?;
-                    current_index = traffic_string_end;
-
-                    // Analyse de la chaine de trafic
-                    let traffic_infos = Self::parse_traffic(&ogn_string[traffic_string_start..traffic_string_end])?;
-                    //println!("{:?}", traffic_infos);
-
-                    // Envoi de l'info de trafic aux clients
-                    self.sender.send(&traffic_infos);
-                }
+                                        // Analyse de la chaine de trafic
+                                        let traffic_infos = Self::parse_traffic(traffic_string)?;
+                                        //println!("{:?}", traffic_infos);
+    
+                                        // Envoi de l'info de trafic aux clients
+                                        self.sender.send(&traffic_infos);
+                                    }    
+                                }
+                            }
+                        }
+                    }
+                },
+                Event::Eof => break,    // Fin de la chaine XML, on sort de la boucle
+                _ => ()                 // Les autres evenements ne nous interessent pas
             }
         }
+
         Ok(())
     }
 
