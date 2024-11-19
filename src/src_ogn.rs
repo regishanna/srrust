@@ -88,7 +88,7 @@ impl SrcOgn {
 
 
     fn parse_traffic(traffic_string: &str) -> anyhow::Result<TrafficInfos> {
-        let mut traffic_infos = TrafficInfos::new();
+        let mut traffic_infos = TrafficInfos::default();
 
         // Decoupage et parse de chaque champ de la chaine de trafic
         let traffic_fields = traffic_string.split(',');

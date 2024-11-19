@@ -74,7 +74,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
     // Adresse
     {
         let offset = HEAD_LEN + TRAFFIC_REPORT_ADDRESS_OFFSET;
-        buf[offset] = addr_type_to_num(&(infos.addr_type));
+        buf[offset] = u8::from(&(infos.addr_type));
         buf[offset + 1] = ((infos.address >> 16) & 0xff) as u8;
         buf[offset + 2] = ((infos.address >> 8) & 0xff) as u8;
         buf[offset + 3] = (infos.address & 0xff) as u8;
@@ -181,10 +181,12 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
 }
 
 
-fn addr_type_to_num(addr_type: &AddressType) -> u8 {
-    match addr_type {
-        AddressType::AdsbIcao => 0,
-        AddressType::Ogn => 6
+impl From<&AddressType> for u8 {
+    fn from(value: &AddressType) -> Self {
+        match value {
+            AddressType::AdsbIcao => 0,
+            AddressType::Ogn => 6
+        }
     }
 }
 
@@ -225,9 +227,7 @@ fn byte_stuff(message: &[u8], buffer: &mut [u8]) -> anyhow::Result<usize> {
         if (i > 0) && (i < (message.len() - 1)) &&  // Les flags de debut et de fin sont exclus du remplacement
             ((val == FLAG_BYTE) || (val == CONTROL_ESCAPE_CHAR)) {
             // Insertion d'un caractere control escape
-            if buffer.len() < cur_len + 2 {     // Verification que la taille du buffer est suffisante
-                return Err(anyhow::anyhow!("Taille du buffer insuffisante"));
-            }
+            anyhow::ensure!(buffer.len() >= cur_len + 2, "Taille du buffer insuffisante");  // Verification que la taille du buffer est suffisante
             buffer[cur_len] = CONTROL_ESCAPE_CHAR;
             cur_len += 1;
             buffer[cur_len] = val ^ 0x20;
@@ -235,9 +235,7 @@ fn byte_stuff(message: &[u8], buffer: &mut [u8]) -> anyhow::Result<usize> {
         }
         else {
             // Pas d'insertion
-            if buffer.len() < cur_len + 1 {     // Verification que la taille du buffer est suffisante
-                return Err(anyhow::anyhow!("Taille du buffer insuffisante"));
-            }
+            anyhow::ensure!(buffer.len() >= cur_len + 1, "Taille du buffer insuffisante");  // Verification que la taille du buffer est suffisante
             buffer[cur_len] = val;
             cur_len += 1;
         }

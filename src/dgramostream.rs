@@ -10,16 +10,10 @@ use std::{io::{Read, Write}, net::TcpStream};
 pub fn send(mut sock: &TcpStream, buf: &[u8]) -> anyhow::Result<()> {
     // Envoi de l'entete contenant la taille du buffer en big endian
     let buf_len_bytes = u16::try_from(buf.len())?.to_be_bytes();
-    let nb = sock.write(&buf_len_bytes)?;
-    if nb < buf_len_bytes.len() {
-        return Err(anyhow::anyhow!("Connexion fermee par le distant"));
-    }
+    sock.write_all(&buf_len_bytes)?;
 
     // Envoi du buffer
-    let nb = sock.write(buf)?;
-    if nb < buf.len() {
-        return Err(anyhow::anyhow!("Connexion fermee par le distant"));
-    }
+    sock.write_all(buf)?;
 
     Ok(())
 }
@@ -68,9 +62,8 @@ impl RecvDgram {
                     if self.header_buf_cur_len >= self.header_buf.len() {
                         // Oui, on lit la taille attendue du datagram
                         let len = u16::from_be_bytes(self.header_buf) as usize;
-                        if len > self.datagram.len() {
-                            return Err(anyhow::anyhow!("Taille attendue du datagram ({}) superieure a la taille du buffer ({})", len, self.datagram.len()));
-                        }
+                        anyhow::ensure!(len <= self.datagram.len(),
+                            "Taille attendue du datagram ({}) superieure a la taille du buffer ({})", len, self.datagram.len());
                         self.expected_len = Some(len);
                         self.datagram_cur_len = 0;
                     }

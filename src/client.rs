@@ -1,11 +1,14 @@
 use crate::{dgramostream, gdl90, internal_com::Receiver, traffic_infos::TrafficInfos};
 
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
-use std::{net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream}, os::fd::AsFd, sync::Mutex, thread, time::Duration};
+use std::{net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream}, os::fd::AsFd, sync::{atomic::AtomicUsize, atomic::Ordering}, thread, time::Duration};
 
 
-// Nombre maximum de clients connnectes en meme temps
+// Nombre maximum de clients connectes en meme temps
 const NB_MAX_CLIENTS: usize = 20;
+
+// Nombre actuel de clients connectes
+static NB_CLIENTS: AtomicUsize = AtomicUsize::new(0);
 
 
 // Position 2D
@@ -21,25 +24,22 @@ pub struct Client {}
 impl Client {
     /// Tentative de creation d'un nouveau client
     pub fn create(socket: TcpStream) -> anyhow::Result<()> {
-        static NB_CLIENTS: Mutex<usize> = Mutex::new(0);
-
         // On verifie que le nombre max de clients connectes n'est pas deja atteint
-        let mut nb_clients = NB_CLIENTS.lock().unwrap();
-        if *nb_clients >= NB_MAX_CLIENTS {
+        if NB_CLIENTS.fetch_add(1, Ordering::Relaxed) >= NB_MAX_CLIENTS {
+            NB_CLIENTS.fetch_sub(1, Ordering::Relaxed);
             return Err(anyhow::anyhow!("Nombre max de clients ({}) atteint", NB_MAX_CLIENTS));
         }
 
         // Creation d'un nouveau client
-        *nb_clients += 1;
         thread::spawn(|| {
-            Self::work_thread(&NB_CLIENTS, socket);
+            Self::work_thread(socket);
         });
 
         Ok(())
     }
 
 
-    fn work_thread(nb_clients: &Mutex<usize>, socket: TcpStream) {
+    fn work_thread(socket: TcpStream) {
         // Memorisation de l'adresse du client connecte
         let client_addr = socket.peer_addr()
             .unwrap_or(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0));
@@ -96,8 +96,7 @@ impl Client {
         }
 
         // On decremente le nombre de clients connectes
-        let mut nb_clients = nb_clients.lock().unwrap();
-        *nb_clients -= 1;
+        NB_CLIENTS.fetch_sub(1, Ordering::Relaxed);
 
         log::info!("Le client {} est deconnecte", client_addr);
     }
@@ -119,14 +118,10 @@ impl Client {
         let mut parser = bytes_parser::BytesParser::from(msg);
 
         let latitude = f64::from(parser.parse_i32()?) / 1_000_000.0;
-        if !(-90.0..=90.0).contains(&latitude) {
-            return Err(anyhow::anyhow!("Latitude hors bornes"));
-        }
+        anyhow::ensure!((-90.0..=90.0).contains(&latitude), "Latitude hors bornes");
 
         let longitude = f64::from(parser.parse_i32()?) / 1_000_000.0;
-        if !(-180.0..=180.0).contains(&longitude) {
-            return Err(anyhow::anyhow!("Longitude hors bornes"));
-        }
+        anyhow::ensure!((-180.0..=180.0).contains(&longitude), "Longitude hors bornes");
 
         Ok(Position {
             latitude,
