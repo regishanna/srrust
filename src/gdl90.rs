@@ -1,11 +1,11 @@
-//! Formatage de messages GDL90
-//! Cf <https://www.faa.gov/sites/faa.gov/files/air_traffic/technology/adsb/archival/GDL90_Public_ICD_RevA.PDF>
+//! GDL90 message formatting
+//! See <https://www.faa.gov/sites/faa.gov/files/air_traffic/technology/adsb/archival/GDL90_Public_ICD_RevA.PDF>
 //! 
 
 use crate::traffic_infos::{TrafficInfos, AddressType};
 
 
-// Structure d'un message
+// Structure of a message
 
 const HEAD_LEN: usize = 2;
 const TAIL_LEN: usize = 3;
@@ -13,7 +13,7 @@ const FLAG_BYTE: u8 = 0x7e;
 const CONTROL_ESCAPE_CHAR: u8 = 0x7d;
 
 
-// Message TRAFFIC REPORT
+// TRAFFIC REPORT message
 
 const TRAFFIC_REPORT_MESSAGE_ID: u8 = 20;
 const TRAFFIC_REPORT_LEN: usize = 27;
@@ -29,7 +29,7 @@ const TRAFFIC_REPORT_TRACK_OFFSET: usize = 16;
 const TRAFFIC_REPORT_CALLSIGN_OFFSET: usize = 18;
 
 
-// Table de CRC
+// CRC table
 const CRC_ARRAY: [u16; 256] = [
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
     0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
@@ -66,12 +66,12 @@ const CRC_ARRAY: [u16; 256] = [
 ];
 
 
-/// Formate un message TRAFFIC REPORT dans un buffer fourni
-/// Retourne la taille utilisee du buffer
+/// Formats a TRAFFIC REPORT message in a provided buffer
+/// Returns the used size of the buffer
 pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> anyhow::Result<usize> {
     let mut buf = [0u8; HEAD_LEN + TRAFFIC_REPORT_LEN + TAIL_LEN];
 
-    // Adresse
+    // Address
     {
         let offset = HEAD_LEN + TRAFFIC_REPORT_ADDRESS_OFFSET;
         buf[offset] = u8::from(&(infos.addr_type));
@@ -80,7 +80,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         buf[offset + 3] = (infos.address & 0xff) as u8;
     }
 
-    // Latitude sur 24 bits signes
+    // Latitude on 24 signed bits
     {
         let mut latitude = ((infos.latitude * f64::from(0x0080_0000)) / 180.0) as i32;
         latitude = latitude.clamp(-0x0040_0000, 0x003f_ffff);
@@ -90,7 +90,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         buf[offset + 2] = (latitude & 0xff) as u8;
     }
 
-    // Longitude sur 24 bits signes
+    // Longitude on 24 signed bits
     {
         let mut longitude = ((infos.longitude * f64::from(0x0080_0000)) / 180.0) as i32;
         longitude = longitude.clamp(-0x0080_0000, 0x007f_ffff);
@@ -100,7 +100,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         buf[offset + 2] = (longitude & 0xff) as u8;
     }
 
-    // Altitude sur 12 bits, offset de 1000 ft
+    // Altitude on 12 bits, 1000 ft offset
     {
         let mut altitude = ((if infos.altitude < -1000 { -1000 } else {infos.altitude}) + 1000) / 25;
         if altitude > 0xffe {
@@ -118,7 +118,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         buf[offset] |= misc_indicator;
     }
 
-    // Ground speed sur 12 bits
+    // Ground speed on 12 bits
     {
         let ground_speed = match infos.ground_speed {
             None => 0xfffu32,
@@ -139,7 +139,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         buf[offset + 1] |= ((ground_speed << 4) & 0xf0) as u8;
     }
 
-    // Vertical speed sur 12 bits
+    // Vertical speed on 12 bits
     {
         let vertical_speed = match infos.vertical_speed {
             None => -0x800i32,
@@ -150,7 +150,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         buf[offset + 1] = (vertical_speed & 0xff) as u8;
     }
 
-    // Track sur 8 bits
+    // Track on 8 bits
     {
         let mut track = match infos.track {
             None => 0,
@@ -163,7 +163,7 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         buf[offset] = track as u8;
     }
 
-    // Callsign sur 8 caracteres
+    // Callsign on 8 characters
     {
         let offset = HEAD_LEN + TRAFFIC_REPORT_CALLSIGN_OFFSET;
         let size_callsign = infos.callsign.chars().count();
@@ -173,10 +173,10 @@ pub fn make_traffic_report_message(infos: &TrafficInfos, buffer: &mut [u8]) -> a
         }
     }
 
-    // Remplissage des champs de l'entete et de la queue
+    // Filling header and tail fields
     fill_header_and_tail(TRAFFIC_REPORT_MESSAGE_ID, &mut buf);
 
-    // Application du byte-stuffing
+    // Application of byte-stuffing
     byte_stuff(&buf, buffer)
 }
 
@@ -192,23 +192,23 @@ impl From<&AddressType> for u8 {
 
 
 fn fill_header_and_tail(message_id: u8, msg_buf: &mut [u8]) {
-    // Flag byte au debut et a la fin
+    // Flag byte at the beginning and at the end
     msg_buf[0] = FLAG_BYTE;
     msg_buf[msg_buf.len() - 1] = FLAG_BYTE;
 
     // Message id
     msg_buf[1] = message_id;
 
-    // CRC sur les champs message id et message data
+    // CRC on the message id and message data fields
     let crc = compute_crc(&msg_buf[1..(msg_buf.len() - 3)]);
-    msg_buf[msg_buf.len() - 3] = (crc & 0xff) as u8;        // LSB en premier
+    msg_buf[msg_buf.len() - 3] = (crc & 0xff) as u8;        // LSB first
     msg_buf[msg_buf.len() - 2] = ((crc >> 8) & 0xff) as u8;
 }
 
 
 /// CRC CRC-CCITT
-/// Le buffer suivant : 0x00 0x81 0x41 0xDB 0xD0 0x08 0x02
-/// donne un CRC de 0x8BB3
+/// The following buffer: 0x00 0x81 0x41 0xDB 0xD0 0x08 0x02
+/// gives a CRC of 0x8BB3
 fn compute_crc(buffer: &[u8]) -> u16 {
     let mut crc = 0u16;
 
@@ -224,18 +224,18 @@ fn byte_stuff(message: &[u8], buffer: &mut [u8]) -> anyhow::Result<usize> {
     let mut cur_len = 0usize;
 
     for (i, &val) in message.iter().enumerate() {
-        if (i > 0) && (i < (message.len() - 1)) &&  // Les flags de debut et de fin sont exclus du remplacement
+        if (i > 0) && (i < (message.len() - 1)) &&  // Start and end flags are excluded from replacement
             ((val == FLAG_BYTE) || (val == CONTROL_ESCAPE_CHAR)) {
-            // Insertion d'un caractere control escape
-            anyhow::ensure!(buffer.len() >= cur_len + 2, "Taille du buffer insuffisante");  // Verification que la taille du buffer est suffisante
+            // Inserting a control escape character
+            anyhow::ensure!(buffer.len() >= cur_len + 2, "Insufficient buffer size");  // Verification that the buffer size is large enough
             buffer[cur_len] = CONTROL_ESCAPE_CHAR;
             cur_len += 1;
             buffer[cur_len] = val ^ 0x20;
             cur_len += 1;
         }
         else {
-            // Pas d'insertion
-            anyhow::ensure!(buffer.len() > cur_len, "Taille du buffer insuffisante");  // Verification que la taille du buffer est suffisante
+            // No insert
+            anyhow::ensure!(buffer.len() > cur_len, "Insufficient buffer size");  // Verification that the buffer size is large enough
             buffer[cur_len] = val;
             cur_len += 1;
         }

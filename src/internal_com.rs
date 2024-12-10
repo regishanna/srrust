@@ -4,45 +4,45 @@ use socket2::{Socket, Domain, Type};
 use std::{net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket}, os::fd::AsFd};
 
 
-// Adresse et port multicast a utiliser
+// Multicast address and port to use
 const MULTICAST_ADDR_V4: Ipv4Addr = Ipv4Addr::new(224,0,0,64);
 const MULTICAST_PORT: u16 = 1665;
 
 
-/// Reception des infos de trafic provenant des sources
+/// Receiving traffic information from sources
 pub struct Receiver {
     socket: UdpSocket,
 }
 
 impl Receiver {
     pub fn new() -> Self {
-        // On utilise la crate socket2 car UdpSocket ne permet pas de positionner l'option SO_REUSEPORT
-        // necessaire pour avoir plusieurs recepteurs a l'ecoute sur le meme port multicast
+        // We use the socket2 crate because UdpSocket does not allow setting the SO_REUSEPORT option
+        // necessary to have several receivers listening on the same multicast port
         let sock = Socket::new(Domain::IPV4, Type::DGRAM, None).unwrap();
         sock.set_reuse_port(true).unwrap();
 
-        // Bind de la socket sur l'adresse et le port d'ecoute multicast
+        // Bind the socket to the listening multicast address and port
         sock.bind(&SocketAddrV4::new(MULTICAST_ADDR_V4, MULTICAST_PORT).into()).unwrap();
 
-        // Maintenant, on peut convertir en UdpSocket
+        // Now we can convert to UdpSocket
         let socket: UdpSocket = sock.into();
 
-        // On s'abonne a l'adresse multicast locale
+        // We subscribe to the local multicast address
         socket.join_multicast_v4(&MULTICAST_ADDR_V4, &Ipv4Addr::LOCALHOST).unwrap();
 
-        // On s'attend a recevoir des trames locales mais pas de filtrage sur le port distant
+        // We expect to receive local frames but no filtering on the remote port
         socket.connect(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
 
         Receiver {socket}
     }
 
-    /// Lecture bloquante d'infos de trafic provenant des sources
+    /// Blocking reading of traffic information from sources
     pub fn recv(&self) -> anyhow::Result<TrafficInfos> {
-        // Lecture bloquante sur la socket multicast
+        // Blocking reading on multicast socket
         let mut buf = [0; 100];
         let recv_size = self.socket.recv(&mut buf)?;
 
-        // Deserialisation pour reconstituer l'info de trafic
+        // Deserialization to reconstruct traffic information
         let traffic_infos: TrafficInfos = bincode::deserialize(&buf[..recv_size])?;
         Ok(traffic_infos)
     }
@@ -56,28 +56,28 @@ impl AsFd for Receiver {
 }
 
 
-/// Emission des infos de trafic a l'ensemble des clients
+/// Transmission of traffic information to all clients
 pub struct Sender {
     socket: UdpSocket,
 }
 
 impl Sender {
     pub fn new() -> Self {
-        // Bind de la socket sur l'adresse locale en n'imposant pas de port d'emission
+        // Bind the socket to the local address without imposing a transmission port
         let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
 
-        // On va emettre les trames vers l'adresse et le port multicast
+        // We will send the frames to the address and the multicast port
         socket.connect(SocketAddr::from((MULTICAST_ADDR_V4, MULTICAST_PORT))).unwrap();
 
         Sender {socket}
     }
 
-    /// Envoi d'infos sur un trafic a l'ensemble des clients
+    /// Sending information on traffic to all clients
     pub fn send(&self, traffic_infos: &TrafficInfos) {
-        // Serialisation de l'info de trafic dans un buffer pour pouvoir l'envoyer
+        // Serialization of traffic information in a buffer to be able to send it
         let buf = bincode::serialize(traffic_infos).unwrap();
 
-        // Envoi du buffer sur la socket multicast
+        // Sending the buffer on the multicast socket
         self.socket.send(&buf).unwrap();
     }
 

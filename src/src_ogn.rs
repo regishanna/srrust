@@ -10,7 +10,7 @@ pub struct SrcOgn {
 }
 
 impl SrcOgn {
-    /// Lance la reception des trafics OGN
+    /// Starts reception of OGN traffic
     pub fn start_receive() {
         thread::spawn(|| {
             Self::work_thread();
@@ -44,7 +44,7 @@ impl SrcOgn {
 
 
     fn get_ogn_string() -> anyhow::Result<String> {
-        // On recupere les infos de trafic sur la france
+        // We retrieve traffic information on France
         let ogn_string = ureq::get("https://live.glidernet.org/lxml.php?\
             a=0\
             &b=51.3\
@@ -58,28 +58,28 @@ impl SrcOgn {
 
 
     fn parse_ogn_string(&self, ogn_string: &str) -> anyhow::Result<()> {
-        // Parse de la chaine XML avec quick-xml
+        // Parse the XML string with quick-xml
         let mut reader = Reader::from_str(ogn_string);
         loop {
             match reader.read_event()? {
                 Event::Empty(element) => {
-                    // Les trafics OGN sont contenus dans des elements XML vides de nom "m"
+                    // OGN traffic is contained in empty XML elements with name "m"
                     if element.local_name().as_ref() == b"m" {
-                        // Parcours des attributs de l'element
+                        // Browse element attributes
                         for attribute in element.attributes() {
                             match attribute {
-                                Err(e) => return Err(anyhow::anyhow!("Attribut incorrect : {}", e)),
+                                Err(e) => return Err(anyhow::anyhow!("Incorrect attribute : {}", e)),
                                 Ok(attr) => {
-                                    // L'attribut contenant l'info de trafic est "a"
+                                    // The attribute containing the traffic information is "a"
                                     if attr.key.local_name().as_ref() == b"a" {
-                                        // On recupere sa valeur
+                                        // We recover its value
                                         let traffic_string = &(attr.unescape_value()?);
 
-                                        // Analyse de la chaine de trafic
+                                        // Analysis of the traffic chain
                                         let traffic_infos = Self::parse_traffic(traffic_string)?;
                                         //println!("{:?}", traffic_infos);
     
-                                        // Envoi de l'info de trafic aux clients
+                                        // Sending traffic information to clients
                                         self.sender.send(&traffic_infos);
                                     }    
                                 }
@@ -87,8 +87,8 @@ impl SrcOgn {
                         }
                     }
                 },
-                Event::Eof => break,    // Fin de la chaine XML, on sort de la boucle
-                _ => ()                 // Les autres evenements ne nous interessent pas
+                Event::Eof => break,    // End of the XML chain, we exit the loop
+                _ => ()                 // Other events do not interest us
             }
         }
 
@@ -99,7 +99,7 @@ impl SrcOgn {
     fn parse_traffic(traffic_string: &str) -> anyhow::Result<TrafficInfos> {
         let mut traffic_infos = TrafficInfos::default();
 
-        // Decoupage et parse de chaque champ de la chaine de trafic
+        // Breaking down and parsing each field in the traffic chain
         let traffic_fields = traffic_string.split(',');
         for (i, traffic_field) in traffic_fields.enumerate() {
             match i {
@@ -112,10 +112,10 @@ impl SrcOgn {
                 9 => traffic_infos.vertical_speed = Some(Self::mps_to_fpm(f64::from_str(traffic_field)?)),
                 13 => {
                     let address = u32::from_str_radix(traffic_field, 16)?;
-                    traffic_infos.address = address & 0x00ff_ffff; // On ne conserve que les 24 bits de poids faible
+                    traffic_infos.address = address & 0x00ff_ffff; // We only keep the 24 least significant bits
                     traffic_infos.addr_type = AddressType::Ogn;
                 },
-                _ => () // Les autres champs ne sont pas utilises et sont donc consideres valides
+                _ => () // The other fields are not used and are considered valid
             }
         }
         Ok(traffic_infos)
