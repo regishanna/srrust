@@ -1,4 +1,5 @@
 use src_ogn::SrcOgn;
+use src_adsbhub::SrcAdsbhub;
 use std::io::Write;
 
 mod traffic_infos;
@@ -8,6 +9,7 @@ mod internal_com;
 mod server;
 mod client;
 mod src_ogn;
+mod src_adsbhub;
 
 fn main() {
     // Init and customization of the trace system
@@ -37,6 +39,9 @@ fn main() {
 
     // Launch of reception of OGN traffic
     SrcOgn::start_receive();
+
+    // Launch of reception of ADSBHub traffic
+    SrcAdsbhub::start_receive();
 
     // Listening and processing client connections (blocking)
     server::listen_connections();

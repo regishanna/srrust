@@ -1,5 +1,4 @@
-use crate::traffic_infos::{AddressType, TrafficInfos};
-use crate::internal_com;
+use crate::{internal_com, traffic_infos::{AddressType, TrafficInfos}};
 
 use quick_xml::{events::Event, Reader};
 use std::{thread, time, str::FromStr};
