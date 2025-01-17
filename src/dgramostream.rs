@@ -29,8 +29,8 @@ pub struct RecvDgram {
 }
 
 impl RecvDgram {
-    pub fn new(datagram_max_len: u16) -> RecvDgram {
-        RecvDgram {
+    pub fn new(datagram_max_len: u16) -> Self {
+        Self {
             datagram: vec![0; datagram_max_len as usize],
             datagram_cur_len: 0,
             expected_len: None,

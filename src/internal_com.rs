@@ -15,7 +15,7 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    pub fn new() -> Self {
+    pub fn new(nonblocking: bool) -> Self {
         // We use the socket2 crate because UdpSocket does not allow setting the SO_REUSEPORT option
         // necessary to have several receivers listening on the same multicast port
         let sock = Socket::new(Domain::IPV4, Type::DGRAM, None).unwrap();
@@ -27,18 +27,21 @@ impl Receiver {
         // Now we can convert to UdpSocket
         let socket: UdpSocket = sock.into();
 
+        // We set the socket to non-blocking mode if asked
+        socket.set_nonblocking(nonblocking).unwrap();
+
         // We subscribe to the local multicast address
         socket.join_multicast_v4(&MULTICAST_ADDR_V4, &Ipv4Addr::LOCALHOST).unwrap();
 
         // We expect to receive local frames but no filtering on the remote port
         socket.connect(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
 
-        Receiver {socket}
+        Self {socket}
     }
 
-    /// Blocking reading of traffic information from sources
+    /// Reading of traffic information from sources
     pub fn recv(&self) -> anyhow::Result<TrafficInfos> {
-        // Blocking reading on multicast socket
+        // Reading on multicast socket
         let mut buf = [0; 100];
         let recv_size = self.socket.recv(&mut buf)?;
 

@@ -1,3 +1,4 @@
+use server::Server;
 use src_ogn::SrcOgn;
 use src_adsbhub::SrcAdsbhub;
 use std::io::Write;
@@ -7,6 +8,7 @@ mod dgramostream;
 mod gdl90;
 mod internal_com;
 mod server;
+mod client_pool;
 mod client;
 mod src_ogn;
 mod src_adsbhub;
@@ -44,5 +46,5 @@ fn main() {
     SrcAdsbhub::start_receive();
 
     // Listening and processing client connections (blocking)
-    server::listen_connections();
+    Server::new().listen_connections();
 }
