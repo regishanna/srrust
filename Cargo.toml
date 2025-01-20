@@ -15,4 +15,4 @@ nix = { version = "0.29.0", features = ["event"] }
 quick-xml = "0.37.1"
 serde = { version = "1.0.210", features = ["alloc", "derive"] }
 socket2 = { version = "0.5.7", features = ["all"] }
-ureq = { version = "2.10.1", features = ["native-certs"] }
+ureq = { version = "2.12.1", features = ["native-certs"] }
