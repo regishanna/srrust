@@ -1,23 +1,43 @@
 use crate::{client, internal_com};
 
 use nix::sys::epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags};
-use std::{net::TcpStream, os::fd::{AsFd, BorrowedFd}, sync::{atomic::{AtomicUsize, Ordering}, mpsc, Arc}, thread};
+use std::{net::TcpStream, os::fd::AsFd, sync::{atomic::{AtomicUsize, Ordering}, mpsc, Arc}, thread};
 
 
 // Maximum number of clients connected at the same time for the pool
 const CLIENTS_MAX_NB: usize = 200;
 
-enum EventType {
-    Client(client::Client),
-    TrafficRecv(internal_com::Receiver),
+
+// Event identifier for use in epoll data field
+
+const EVENT_TYPE_CLIENT: u32 = 1;
+const EVENT_TYPE_TRAFFIC_RECV: u32 = 2;
+
+struct EventId(u64);
+
+impl EventId {
+    fn new(event_type: u32, event_number: u32) -> Self {
+        Self(u64::from(event_type) << 32 | u64::from(event_number))
+    }
+
+    fn event_type(&self) -> u32 {
+        (self.0 >> 32) as u32
+    }
+
+    fn event_number(&self) -> u32 {
+        (self.0 & 0x00000000_ffffffffu64) as u32
+    }
 }
 
-impl AsFd for EventType {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        match self {
-            EventType::Client(client) => client.as_fd(),
-            EventType::TrafficRecv(traffic_recv) => traffic_recv.as_fd(),
-        }
+impl From<u64> for EventId {
+    fn from(event_id: u64) -> EventId {
+        Self(event_id)
+    }
+}
+
+impl From<EventId> for u64 {
+    fn from(event_id: EventId) -> u64 {
+        event_id.0
     }
 }
 
@@ -47,7 +67,7 @@ impl ClientPool {
     }
 
 
-    /// Adding a new client to the pool
+    /// Add a new client to the pool
     pub fn add_new_client(&self, socket: TcpStream) {
         self.new_client_tx.send(socket).unwrap();
     }
@@ -60,15 +80,19 @@ impl ClientPool {
 
 
     fn work_thread(new_client_rx: mpsc::Receiver<TcpStream>, nb_clients: Arc<AtomicUsize>) {
-        // Event list
-        let mut events = Vec::new();
-        let mut free_events = Vec::new();      // Index of free events (EventType::None) in events Vec
+        // Clients list
+        let mut clients = Vec::new();
+        let mut free_clients = Vec::new();      // Index of free clients (None) in clients Vec
+        let mut clients_to_delete = Vec::new(); // Index of clients to delete in clients Vec
 
         // Create the epoll instance
         let epoll = Epoll::new(EpollCreateFlags::empty()).unwrap();
 
-        // Add the traffic receiver event
-        Self::add_event(&epoll, &mut events, &mut free_events, EventType::TrafficRecv(internal_com::Receiver::new(true /* nonblocking */)));
+        // Create the traffic receiver and register it in epoll
+        let traffic_recv = internal_com::Receiver::new(true /* nonblocking */);
+        epoll.add(traffic_recv.as_fd(),
+        EpollEvent::new(EpollFlags::EPOLLIN,
+            EventId::new(EVENT_TYPE_TRAFFIC_RECV, 0).into())).unwrap();
 
         let mut epoll_events = [EpollEvent::empty(); 100];
         loop {
@@ -77,120 +101,146 @@ impl ClientPool {
 
             // Read the events
             for epoll_event in epoll_events.iter().take(nb_events) {
-                let event_index = usize::try_from(epoll_event.data()).unwrap();
-                match &mut events[event_index] {
-                    Some(EventType::Client(client)) => {
+                let event_id: EventId = epoll_event.data().into();
+                match event_id.event_type() {
+                    EVENT_TYPE_CLIENT => {
                         // Process the client event
-                        match client.recv_position() {
-                            Ok(Some(position)) => {
-                                log::info!("New position received ({}, {}) from client {}",
-                                    position.latitude, position.longitude, client.address());
-                            }
-                            Ok(None) => {
-                                // Nothing to do
-                            }
-                            Err(e) => {
-                                // Error while receiving the client position
-                                log::warn!("Receive error ({}) from client {}", e, client.address());
-                                Self::delete_client(&mut events[event_index], event_index, &epoll, &mut free_events, &nb_clients);
-                            }
-                        }
+                        let client_index = event_id.event_number() as usize;
+                        Self::process_client_event(client_index, &epoll, &mut clients, &mut free_clients, &nb_clients);
                     }
 
-                    Some(EventType::TrafficRecv(traffic_recv)) => {
+                    EVENT_TYPE_TRAFFIC_RECV => {
                         // Process the traffic receiver event
-                        let traffic_infos = traffic_recv.recv();
-                        match traffic_infos {
-                            Err(e) => log::warn!("Traffic receive error : {}", e),
-                            Ok(infos) => {
-                                // Send the traffic information to all clients
-                                for (i, event) in events.iter_mut().enumerate() {
-                                    if let Some(EventType::Client(client)) = event {
-                                        if let Err(e) = client.send_traffic(&infos) {
-                                            log::warn!("Send error ({}) to client {}", e, client.address());
-                                            Self::delete_client(event, i, &epoll, &mut free_events, &nb_clients);
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        Self::process_traffic_event(&traffic_recv, &epoll, &mut clients, &mut free_clients, &mut clients_to_delete, &nb_clients);
                     }
 
-                    None => {
-                        // An event may have occurred on an entry that has since been deleted
-                        // => We ignore it
-                    }
+                    event_type => panic!("Unknown event type : {event_type}"),
                 }
             }
 
             // Check if there are new clients
-            Self::check_new_client(&new_client_rx, &epoll, &mut events, &mut free_events, &nb_clients);
+            Self::check_new_client(&new_client_rx, &epoll, &mut clients, &mut free_clients, &nb_clients);
         }
     }
 
 
-    fn add_event(epoll: &Epoll, events: &mut Vec<Option<EventType>>, free_events: &mut Vec<usize>, event: EventType) {
-        let event_index;
-
-        // If there are free events, we reuse one
-        if let Some(i) = free_events.pop() {
-            assert!(events[i].is_none());
-            events[i] = Some(event);
-            event_index = i;
-        }
-        // Otherwise we add a new event
-        else {
-            events.push(Some(event));
-            event_index = events.len() - 1;
-        }
-
-        // Register the event in epoll
-        epoll.add(events[event_index].as_ref().unwrap().as_fd(),
-            EpollEvent::new(EpollFlags::EPOLLIN, event_index as u64)).unwrap();
-    }
-
-
-    fn delete_event(event: &mut Option<EventType>, event_index: usize, epoll: &Epoll, free_events: &mut Vec<usize>) {
-        // Unregister the event in epoll
-        epoll.delete(event.as_ref().unwrap().as_fd()).unwrap();
-
-        // Free the event
-        *event = None;
-        free_events.push(event_index);
-    }
-
-
-    fn delete_client(event: &mut Option<EventType>, event_index: usize, epoll: &Epoll, free_events: &mut Vec<usize>, nb_clients: &Arc<AtomicUsize>) {
-        match event.as_ref().unwrap() {
-            EventType::Client(client) => {
-                log::info!("Client {} is disconnected", client.address());
-                Self::delete_event(event, event_index, epoll, free_events);
-                nb_clients.fetch_sub(1, Ordering::Relaxed);
+    fn process_client_event(client_index: usize, epoll: &Epoll, clients: &mut [Option<client::Client>], free_clients: &mut Vec<usize>, nb_clients: &Arc<AtomicUsize>) {
+        if let Some(client) = &mut clients[client_index] {
+            match client.recv_position() {
+                Ok(Some(position)) => {
+                    log::info!("New position received ({}, {}) from client {}",
+                        position.latitude, position.longitude, client.address());
+                }
+                Ok(None) => {
+                    // Nothing to do
+                }
+                Err(e) => {
+                    // Error while receiving the client position
+                    log::warn!("Receive error ({}) from client {}", e, client.address());
+                    Self::delete_client(client_index, epoll, clients, free_clients, nb_clients);
+                }
             }
-            EventType::TrafficRecv(_) => panic!("Event {event_index} is not a client"),
         }
+    }
+
+
+    fn process_traffic_event(traffic_recv: &internal_com::Receiver, epoll: &Epoll,
+        clients: &mut [Option<client::Client>], free_clients: &mut Vec<usize>, clients_to_delete: &mut Vec<usize>,
+        nb_clients: &Arc<AtomicUsize>) {
+
+        // Loop until there is no more traffic information to receive, to optimize the number of epoll.wait calls
+        loop {
+            match traffic_recv.recv() {
+                Err(e) => {
+                    // Exit the loop if an error occurs
+                    // A WouldBlock error is normal because we are in non-blocking mode
+                    // and indicates that there is no more traffic information to receive
+                    match e.downcast_ref::<std::io::Error>() {
+                        Some(err) if err.kind() == std::io::ErrorKind::WouldBlock => (),
+                        Some(_) | None => log::warn!("Traffic receive error : {}", e),
+                    }
+                    break;
+                }
+    
+                Ok(infos) => {
+                    // Send the traffic information to all clients
+                    for (i, client_opt) in clients.iter().enumerate() {
+                        if let Some(client) = client_opt {
+                            if let Err(e) = client.send_traffic(&infos) {
+                                log::warn!("Send error ({}) to client {}", e, client.address());
+                                // Add the client to the delete list
+                                clients_to_delete.push(i);
+                            }
+                        }
+                    }
+    
+                    // Delete clients that must be deleted
+                    while let Some(i) = clients_to_delete.pop() {
+                        Self::delete_client(i, epoll, clients, free_clients, nb_clients);
+                    }
+                }
+            }
+        }
+    }
+
+
+    fn add_client(client: client::Client, epoll: &Epoll, clients: &mut Vec<Option<client::Client>>, free_clients: &mut Vec<usize>, nb_clients: &Arc<AtomicUsize>) {
+        // If the maximum number of clients is reached, we refuse the new client
+        let current_nb_clients = nb_clients.fetch_add(1, Ordering::Relaxed);
+        if current_nb_clients >= CLIENTS_MAX_NB {
+            nb_clients.fetch_sub(1, Ordering::Relaxed);
+            log::warn!("Unable to connect new client {} : maximum number of clients ({}) for the pool is reached", client.address(), CLIENTS_MAX_NB);
+        }
+        else {
+            log::info!("New client connected : {}, {}th in the pool", client.address(), current_nb_clients + 1);
+
+            // Add the new client to the list
+            let client_index;
+
+            // If there are free clients, we reuse one
+            if let Some(i) = free_clients.pop() {
+                assert!(clients[i].is_none());
+                clients[i] = Some(client);
+                client_index = i;
+            }
+            // Otherwise we add a new client
+            else {
+                clients.push(Some(client));
+                client_index = clients.len() - 1;
+            }
+    
+            // Register the event in epoll
+            epoll.add(clients[client_index].as_ref().unwrap().as_fd(),
+                EpollEvent::new(EpollFlags::EPOLLIN,
+                    EventId::new(EVENT_TYPE_CLIENT, client_index.try_into().unwrap()).into())).unwrap();    
+        }
+    }
+
+
+    fn delete_client(client_index: usize, epoll: &Epoll, clients: &mut [Option<client::Client>], free_clients: &mut Vec<usize>, nb_clients: &Arc<AtomicUsize>) {
+        let client = &mut clients[client_index];
+
+        log::info!("Client {} is disconnected", client.as_ref().unwrap().address());
+
+        // Unregister the event in epoll
+        epoll.delete(client.as_ref().unwrap().as_fd()).unwrap();
+
+        // Free the client
+        *client = None;
+        free_clients.push(client_index);
+
+        // Decrement the number of clients
+        nb_clients.fetch_sub(1, Ordering::Relaxed);
     }
 
 
     fn check_new_client(new_client_rx: &mpsc::Receiver<TcpStream>, epoll: &Epoll,
-        events: &mut Vec<Option<EventType>>, free_events: &mut Vec<usize>, nb_clients: &Arc<AtomicUsize>) {
+        clients: &mut Vec<Option<client::Client>>, free_clients: &mut Vec<usize>, nb_clients: &Arc<AtomicUsize>) {
 
         // While there are new clients, we add them to the pool
         while let Ok(socket) = new_client_rx.try_recv() {
-            let client_addr = socket.peer_addr().unwrap();
-
-            // If the maximum number of clients is reached, we refuse the new client
-            let current_nb_clients = nb_clients.fetch_add(1, Ordering::Relaxed);
-            if current_nb_clients >= CLIENTS_MAX_NB {
-                nb_clients.fetch_sub(1, Ordering::Relaxed);
-                log::warn!("Unable to connect new client {} : maximum number of clients ({}) for the pool is reached", client_addr, CLIENTS_MAX_NB);
-            }
-            else {
-                // Add the new client to the event list
-                socket.set_nonblocking(true).unwrap();  // We can't block all clients because of one blocking client
-                Self::add_event(epoll, events, free_events, EventType::Client(client::Client::new(socket)));
-                log::info!("New client connected : {}, {}th in the pool", client_addr, current_nb_clients + 1);
-            }
+            socket.set_nonblocking(true).unwrap();  // We can't block all clients because of one blocking client
+            Self::add_client(client::Client::new(socket), epoll, clients, free_clients, nb_clients);
         }
     }
 
